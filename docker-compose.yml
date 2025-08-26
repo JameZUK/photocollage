@@ -1,0 +1,23 @@
+# docker-compose.yml
+# Defines the services, networks, and volumes for the Docker application.
+
+version: '3.8'
+
+services:
+  collage-generator:
+    # Build the Docker image from the Dockerfile in the current directory.
+    build: .
+    # Name the container for easier identification.
+    container_name: photo_collage_generator
+    # Map port 8000 on the host to port 8000 in the container.
+    ports:
+      - "8000:8000"
+    # Mount local directories into the container.
+    # This allows the app to access your photos and config file directly.
+    # Changes made locally to these files will be reflected in the container.
+    volumes:
+      - ./photos:/app/photos
+      - ./config.yaml:/app/config.yaml
+    # Restart the container automatically if it stops.
+    restart: unless-stopped
+
