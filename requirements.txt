@@ -1,0 +1,5 @@
+Flask
+Pillow
+PyYAML
+waitress
+pillow-heif
