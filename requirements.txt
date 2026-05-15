@@ -2,4 +2,5 @@ Flask
 Pillow
 PyYAML
 waitress
-pillow-heif
+pillow-heif>=0.7.0
+httpx

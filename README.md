@@ -1,93 +1,142 @@
-# **Photo Collage Generator for E-Ink Displays**
+# Photo Collage Generator for InkyPi
 
-A Python-based web server that dynamically generates beautiful photo collages, perfectly sized for e-ink displays like the Inky Impression. The application scans a directory of your photos, intelligently arranges them into a visually appealing layout, and serves the final image via a simple web endpoint.  
-It's designed to run continuously in a Docker container, making it easy to set up a personal digital photo frame that always shows fresh content.
+A Flask backend that pulls photos from [Immich](https://immich.app) and serves dynamically generated collages to [InkyPi](https://github.com/fatihak/InkyPi)-driven e-ink displays.
 
-## **Features**
+This project was built to drive a two-display setup:
 
-* **Dynamic Collage Generation**: Automatically creates new collages on each request.  
-* **Multiple Layouts**: Supports grid and golden\_ratio layouts, with an auto mode that intelligently selects the best one based on your photos.  
-* **Thematic Collages**: Has a configurable chance to pull all photos from a single sub-folder, creating collages from the same day or event.  
-* **Smart & Efficient**: Pre-resizes images for fast layout calculations but uses original files for final high-quality output. Automatically corrects image orientation based on EXIF data.  
-* **Highly Configurable**: All settings are managed in a simple config.yaml file, which is auto-created on first run.  
-* **Dockerized**: Comes with docker-compose.yml for easy, one-command setup and deployment.  
-* **Wide Image Support**: Works with .jpg, .png, and Apple's .heic photo formats.
+| Display | Endpoint | Resolution | Palette | Purpose |
+|---|---|---|---|---|
+| Inky Impression 13.3" (top) | `/collage.png` | 1600×1200 | 7-colour | The photo collage |
+| Inky wHAT (bottom) | `/info.png` | 400×300 | 4-colour | Layout legend — group letters, dates, and locations matching the collage above |
 
-## **Requirements**
+Both endpoints share a single "current generation" of photos so the legend always describes the collage that's actually on the larger screen.
 
-* [Docker](https://docs.docker.com/get-docker/)  
-* [Docker Compose](https://docs.docker.com/compose/install/)
+## How it works
 
-## **Setup & Installation**
+1. On each request, the server picks N photos from your Immich library using one of three weighted strategies (random / on-this-day memories / album), then composes them into a collage with one of two layout algorithms (`grid` or `golden_ratio`, picked automatically by default).
+2. Photos are grouped by `(capture date, city/country)` using Immich's pre-computed reverse-geocoded metadata — no Nominatim, no local EXIF parsing.
+3. Each group gets a coloured marker (red / yellow / black, plus striped pairs for additional groups). These same markers appear as borders around the relevant photos on `/info.png` and as a colour-coded list of dates+locations.
 
-1. **Clone the Repository**  
-   git clone \<your-repository-url\>  
-   cd photo-collage-generator
+### The two endpoints
 
-2. Create Initial Configuration  
-   Run the configuration script once locally. This will create the necessary config.yaml file and the photos directory.  
-   python3 config.py
+* **`GET /collage.png`** — the main collage. Full-colour RGB PNG. Sized to `display.width × display.height`. Intended for the 7-colour display; do not pre-quantize, the InkyPi driver handles dithering against the device palette.
+* **`GET /info.png`** — the legend image. Pre-quantized to the Inky wHAT's 4-colour palette (white background, with red / yellow / black markers) so text and borders render crisply without dithering. Sized to `info_display.width × info_display.height`.
+* **`GET /`** — a plain HTML status page listing each group, its marker colour(s), date, and location. Useful for verifying what's being shown without staring at the e-ink panels.
 
-3. Add Your Photos  
-   Copy your photo collection into the newly created photos directory. You can organize them into sub-folders (e.g., by date or event), and the script will scan them recursively.  
-4. Build and Run the Docker Container  
-   This command will build the Docker image and start the web server in the background.  
-   docker-compose up \--build \-d
+Both image endpoints share one cached "current generation" for `generation.ttl_seconds` (default 30s). The first request after the TTL expires regenerates; subsequent requests within the window serve the cached image. This means you can point two independent InkyPi playlists at the two endpoints and they will stay in sync without coordinating with each other — whichever one fires first triggers the generation.
 
-   The \-d flag runs the container in detached mode. To view the logs, you can run docker-compose logs \-f.
+## Requirements
 
-## **Configuration**
+* [Docker](https://docs.docker.com/get-docker/) + [Docker Compose](https://docs.docker.com/compose/install/)
+* A reachable Immich instance with an API key (Immich UI → Account → API Keys)
+* Two InkyPi instances configured with the `image_url` plugin (one per display)
 
-All application settings are controlled via the config.yaml file.  
-\# Web server configuration  
-server:  
-  host: "0.0.0.0"  \# Leave as 0.0.0.0 to be accessible on your network  
-  port: 8000        \# The port the server will run on
+## Setup
 
-\# Display/output image settings  
-display:  
-  width: 1600       \# Final collage width in pixels  
-  height: 1200      \# Final collage height in pixels
+```sh
+git clone <this-repo-url>
+cd photocollage
+```
 
-\# Photo source and collage settings  
-photos:  
-  \# Path to your photo library within the container  
-  source\_directory: "./photos"
+Edit `config.yaml` and set at minimum:
 
-  \# Collage layout style: "grid", "golden\_ratio", or "auto"  
-  layout: "auto"
+```yaml
+immich:
+  base_url: "http://your-immich-host:2283"
+  api_key: "your-immich-api-key"
+```
 
-  \# Space between images in pixels  
-  padding: 10
+Then:
 
-  \# Shuffle image order for each collage  
-  randomize\_order: true
+```sh
+docker compose up --build -d
+docker compose logs -f
+```
 
-  \# Max size for temporary images used during layout calculation (performance)  
-  max\_image\_size: 800
+Point each InkyPi's `image_url` plugin at the appropriate endpoint:
 
-  \# The target number of images to include in a collage  
-  max\_images\_per\_collage: 20
+* Big display: `http://<this-host>:8000/collage.png`
+* Info display: `http://<this-host>:8000/info.png`
 
-  \# Percentage chance (0-100) to pull all photos from a single sub-folder  
-  same\_folder\_percentage: 25
+## Configuration reference
 
-## **Usage**
+`config.yaml` is the only configuration file. All blocks are optional — anything you omit is filled in from `DEFAULT_CONFIG` in `config.py` via deep merge.
 
-Once the server is running, you can access your collage from any device on your network.
+```yaml
+server:
+  host: 0.0.0.0
+  port: 8000
 
-* **Web Interface**: Open http://\<server\_ip\>:8000 in your browser for instructions.  
-* **Collage Endpoint**: The latest collage is always available at http://\<server\_ip\>:8000/collage.png.
+display:                          # the big Inky Impression
+  width: 1600
+  height: 1200
 
-Your Inky Impression display or any other digital frame can be pointed to this URL to fetch a new image. Simply refreshing the page will generate a new collage.
+info_display:                     # the small Inky wHAT
+  width: 400
+  height: 300
+  font_settings:                  # paths must exist inside the container
+    header:       { path: "/usr/share/fonts/...", size: 11 }
+    body:         { path: "/usr/share/fonts/...", size: 11 }
+    group_letter: { path: "/usr/share/fonts/...", size: 14 }
 
-## **Project Structure**
+immich:
+  base_url: "http://immich:2283"
+  api_key: ""                     # required
+  verify_tls: true                # set false for self-signed LAN certs
+  image_size: preview             # 'preview' (fast JPEG) or 'original'
 
-.  
-├── collage\_generator.py    \# Core logic for creating collage layouts.  
-├── config.py               \# Handles loading and creating config.yaml.  
-├── main.py                 \# The Flask web server entry point.  
-├── Dockerfile              \# Instructions for building the Docker image.  
-├── docker-compose.yml      \# Defines the Docker service.  
-├── requirements.txt        \# Python package dependencies.  
-└── photos/                 \# Directory for your image library (mounted as a volume).  
+selection:
+  weights:                        # weighted random across strategies; 0 disables
+    random: 40
+    memories: 30
+    album: 30
+  album_ids: []                   # empty = pick any album with enough photos
+  min_assets_per_collage: 4       # fall back to 'random' if a strategy returns less
+
+cache:
+  asset_list_ttl_seconds: 300     # in-memory cache for album/memory lookups
+  image_dir: "/app/cache"         # empty string disables on-disk image cache
+  image_max_bytes: 500000000      # LRU eviction budget
+
+photos:
+  layout: auto                    # 'auto' | 'grid' | 'golden_ratio'
+  padding: 5
+  randomize_order: true
+  max_image_size: 800             # downsample before layout for speed
+  max_images_per_collage: 5
+
+generation:
+  ttl_seconds: 30                 # shared-generation cache for /collage.png + /info.png
+
+debugging:
+  enabled: false
+```
+
+## Project structure
+
+```
+.
+├── main.py                # Flask app, GenerationManager, InfoGraphicRenderer
+├── collage_generator.py   # Collage composition (grid + golden_ratio layouts)
+├── asset_source.py        # Weighted strategy selection + image fetcher with caches
+├── immich_client.py       # Thin httpx client for the 5 Immich endpoints used
+├── config.py              # DEFAULT_CONFIG + deep-merge loader
+├── config.yaml            # Your settings (see below for safety note)
+├── Dockerfile             # Multi-stage build, non-root user
+└── docker-compose.yml
+```
+
+## Keeping your API key out of git
+
+`config.yaml` is tracked in this repo because it doubles as a template — the shipped version has `api_key: ""`. Once you set a real key locally, take **one** of these steps so you don't accidentally commit it:
+
+1. **Tell git to ignore local changes** (simplest):
+   ```sh
+   git update-index --skip-worktree config.yaml
+   ```
+   Reverse with `--no-skip-worktree` when you genuinely want to edit the template.
+
+2. **Or move the key out of the file** — set `IMMICH_API_KEY` in your shell / `docker-compose.yml` env block and read it from `config.py` (not currently wired up; small change if you want it).
+
+3. **Or untrack `config.yaml` entirely**: uncomment the `# config.yaml` line in `.gitignore` and `git rm --cached config.yaml`.
+```

@@ -1,0 +1,58 @@
+server:
+  host: 0.0.0.0
+  port: 8000
+
+display:
+  width: 1600
+  height: 1200
+
+info_display:
+  width: 400
+  height: 300
+  font_settings:
+    header:
+      path: "/usr/share/fonts/truetype/roboto/hinted/RobotoTTF/RobotoCondensed-Regular.ttf"
+      size: 11
+    body:
+      path: "/usr/share/fonts/truetype/roboto/hinted/RobotoTTF/RobotoCondensed-Regular.ttf"
+      size: 11
+    group_letter:
+      path: "/usr/share/fonts/truetype/roboto/hinted/RobotoTTF/RobotoCondensed-Regular.ttf"
+      size: 14
+
+immich:
+  base_url: "http://immich:2283"   # change to your Immich URL
+  api_key: ""                       # required: create one in Immich -> Account -> API Keys
+  verify_tls: true
+  image_size: preview               # 'preview' (fast, JPEG) or 'original' (full quality)
+
+selection:
+  # Weighted random across strategies. Set to 0 to disable a strategy.
+  # Roughly mirrors the previous same_folder_percentage=60 by leaning on
+  # memories+album for thematic collages.
+  weights:
+    random: 40
+    memories: 30
+    album: 30
+  album_ids: []                     # empty = any album with enough photos
+  min_assets_per_collage: 4
+
+cache:
+  asset_list_ttl_seconds: 300       # in-memory cache for albums/memories lookups
+  image_dir: "/app/cache"           # set to "" to disable on-disk image byte cache
+  image_max_bytes: 500000000
+
+photos:
+  layout: auto
+  padding: 5
+  randomize_order: true
+  max_image_size: 800
+  max_images_per_collage: 5
+
+generation:
+  # Both /collage.png and /info.png share one cached generation for this many seconds,
+  # so the two InkyPi displays stay in sync. Tune to your playlist interval.
+  ttl_seconds: 30
+
+debugging:
+  enabled: true
