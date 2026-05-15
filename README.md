@@ -126,17 +126,3 @@ debugging:
 └── docker-compose.yml
 ```
 
-## Keeping your API key out of git
-
-`config.yaml` is tracked in this repo because it doubles as a template — the shipped version has `api_key: ""`. Once you set a real key locally, take **one** of these steps so you don't accidentally commit it:
-
-1. **Tell git to ignore local changes** (simplest):
-   ```sh
-   git update-index --skip-worktree config.yaml
-   ```
-   Reverse with `--no-skip-worktree` when you genuinely want to edit the template.
-
-2. **Or move the key out of the file** — set `IMMICH_API_KEY` in your shell / `docker-compose.yml` env block and read it from `config.py` (not currently wired up; small change if you want it).
-
-3. **Or untrack `config.yaml` entirely**: uncomment the `# config.yaml` line in `.gitignore` and `git rm --cached config.yaml`.
-```
