@@ -38,10 +38,17 @@ def asset_metadata(asset: dict) -> dict:
     else:
         location = 'N/A'
 
+    people = [p.get('name') for p in (asset.get('people') or []) if p.get('name')]
+    description = (exif.get('description') or '').strip()
+
     return {
         'filename': asset.get('originalFileName', asset.get('id', 'unknown')),
         'datetime': date_part,
         'location': location,
+        'city': city or '',
+        'country': country or '',
+        'people': people,
+        'description': description,
     }
 
 

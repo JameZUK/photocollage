@@ -30,6 +30,22 @@ DEFAULT_CONFIG = {
                 'size': 24,
             },
         },
+        'group_text': {
+            # Ordered list of text fields rendered for each group, one per line.
+            # Empty/missing values are silently skipped.
+            # Available fields:
+            #   date            "2018-06-15"
+            #   date_relative   "8y ago"
+            #   location        "Brighton, UK"
+            #   city, country   components of location
+            #   people          aggregated face-tagged names, e.g. "Tom, Sarah & Mum"
+            #   description     user-set caption from Immich
+            #   filenames       numbered when group has >1 photo (default behaviour)
+            #   filenames_plain unnumbered filenames
+            'lines': ['date', 'location', 'filenames'],
+            'people_max': 3,
+            'use_first_names_only': True,
+        },
     },
     'immich': {
         'base_url': 'http://immich:2283',

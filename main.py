@@ -4,6 +4,7 @@ import math
 import os
 import threading
 import time
+from datetime import date as _date_cls, datetime as _datetime_cls
 from typing import Optional
 
 from flask import Flask, send_file
@@ -13,6 +14,52 @@ from asset_source import AssetSource, ImageFetcher
 from collage_generator import create_collage
 from config import get_config
 from immich_client import ImmichClient
+
+
+def _relative_date(date_str: str) -> str:
+    """Convert 'YYYY-MM-DD' to a compact relative form like '8y ago'."""
+    try:
+        d = _datetime_cls.strptime(date_str, '%Y-%m-%d').date()
+    except (ValueError, TypeError):
+        return ''
+    today = _date_cls.today()
+    delta_days = (today - d).days
+    if delta_days < 0:
+        return ''
+    if delta_days == 0:
+        return 'today'
+    if delta_days == 1:
+        return 'yesterday'
+    if delta_days < 14:
+        return f'{delta_days}d ago'
+    if delta_days < 60:
+        return f'{delta_days // 7}w ago'
+    years = today.year - d.year - ((today.month, today.day) < (d.month, d.day))
+    if years >= 1:
+        return f'{years}y ago'
+    months = (today.year - d.year) * 12 + (today.month - d.month) - (1 if today.day < d.day else 0)
+    return f'{months}mo ago' if months > 0 else ''
+
+
+def _format_people(names: list, *, max_show: int = 3, first_names_only: bool = True) -> str:
+    """Compact people summary: 'Tom, Sarah & Mum' or 'Tom, Sarah, Mum +2'."""
+    if not names:
+        return ''
+    seen = {}
+    for n in names:
+        if not n:
+            continue
+        display = n.split(' ', 1)[0] if first_names_only else n
+        seen[display] = seen.get(display, 0) + 1
+    if not seen:
+        return ''
+    unique = sorted(seen.keys(), key=lambda k: (-seen[k], k))
+    if len(unique) <= max_show:
+        if len(unique) == 1:
+            return unique[0]
+        return ', '.join(unique[:-1]) + ' & ' + unique[-1]
+    rest = len(unique) - max_show
+    return ', '.join(unique[:max_show]) + f' +{rest}'
 
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -87,10 +134,69 @@ class InfoGraphicRenderer:
         self.draw = ImageDraw.Draw(self.image)
         self._load_fonts()
         self.debug_enabled = config.get('debugging', {}).get('enabled', False)
+        self.group_text_cfg = self.settings.get('group_text', {})
         self.fit_groups = set()
         self.callout_groups = {}
         self.scale_x = 1
         self.scale_y = 1
+
+    def _build_group_text_lines(self, group):
+        """Return ordered text lines for a group based on info_display.group_text.lines."""
+        photos = self.collage_info['photos']
+        members = group['members']
+        date_str, location = group['key']
+        fields = self.group_text_cfg.get('lines', ['date', 'location', 'filenames'])
+        people_max = self.group_text_cfg.get('people_max', 3)
+        first_names = self.group_text_cfg.get('use_first_names_only', True)
+
+        def metas():
+            return [photos[m]['metadata'] for m in members]
+
+        lines = []
+        for field in fields:
+            if field == 'date':
+                if date_str not in ('Unknown Date', 'N/A'):
+                    lines.append(date_str)
+            elif field == 'date_relative':
+                rel = _relative_date(date_str)
+                if rel:
+                    lines.append(rel)
+            elif field == 'location':
+                if location not in ('Unknown Location', 'N/A'):
+                    lines.append(location)
+            elif field == 'city':
+                cities = sorted({m.get('city') for m in metas() if m.get('city')})
+                if cities:
+                    lines.append(', '.join(cities))
+            elif field == 'country':
+                countries = sorted({m.get('country') for m in metas() if m.get('country')})
+                if countries:
+                    lines.append(', '.join(countries))
+            elif field == 'people':
+                names = []
+                for m in metas():
+                    names.extend(m.get('people') or [])
+                formatted = _format_people(names, max_show=people_max, first_names_only=first_names)
+                if formatted:
+                    lines.append(formatted)
+            elif field == 'description':
+                for m in metas():
+                    desc = (m.get('description') or '').strip()
+                    if desc:
+                        lines.append(desc)
+                        break
+            elif field == 'filenames':
+                if len(members) > 1:
+                    lines.extend(
+                        f"{i+1}. {os.path.basename(photos[m]['metadata']['filename'])}"
+                        for i, m in enumerate(members)
+                    )
+                elif members:
+                    lines.append(os.path.basename(photos[members[0]]['metadata']['filename']))
+            elif field == 'filenames_plain':
+                for m in members:
+                    lines.append(os.path.basename(photos[m]['metadata']['filename']))
+        return lines
 
     def _load_fonts(self):
         font_config = self.settings.get('font_settings', {})
@@ -187,19 +293,8 @@ class InfoGraphicRenderer:
             for group_data in self.collage_info['groups']:
                 member_boxes = [(photos[i]['box'], i) for i in group_data['members']]
                 largest_box_coll, _ = max(member_boxes, key=lambda item: (item[0][2] - item[0][0]) * (item[0][3] - item[0][1]))
-                date, location = group_data['key']
-                text_parts = [group_data['letter']]
-                if date not in ["Unknown Date", "N/A"]:
-                    text_parts.append(date)
-                if location != "Unknown Location":
-                    text_parts.append(location)
-                num_members = len(group_data['members'])
-                if num_members > 1:
-                    filenames = [f"{i+1}. {os.path.basename(photos[m]['metadata']['filename'])}" for i, m in enumerate(group_data['members'])]
-                else:
-                    filenames = [os.path.basename(photos[group_data['members'][0]]['metadata']['filename'])]
-                text_parts.extend(filenames)
-                full_group_text = "\n".join(text_parts)
+                body_lines = self._build_group_text_lines(group_data)
+                full_group_text = "\n".join([group_data['letter']] + body_lines)
 
                 available_w = (largest_box_coll[2] - largest_box_coll[0]) * scale_x_current - 20
                 available_h = (largest_box_coll[3] - largest_box_coll[1]) * scale_y_current - 20
@@ -307,19 +402,8 @@ class InfoGraphicRenderer:
                     self.draw.rectangle([x + gap, y + gap, x + w - gap, y + h - gap], outline=color_tuple, width=6)
 
                 if group_id in self.fit_groups and photo_idx == largest_photo_idx:
-                    date, location = group_data['key']
-                    text_parts = [group_data['letter']]
-                    if date not in ["Unknown Date", "N/A"]:
-                        text_parts.append(date)
-                    if location != "Unknown Location":
-                        text_parts.append(location)
-                    num_members = len(group_data['members'])
-                    if num_members > 1:
-                        filenames = [f"{i+1}. {os.path.basename(photos[m]['metadata']['filename'])}" for i, m in enumerate(group_data['members'])]
-                    else:
-                        filenames = [os.path.basename(photos[group_data['members'][0]]['metadata']['filename'])]
-                    text_parts.extend(filenames)
-                    text_to_draw = "\n".join(text_parts)
+                    body_lines = self._build_group_text_lines(group_data)
+                    text_to_draw = "\n".join([group_data['letter']] + body_lines)
                     wrapped_text, _ = self._get_wrapped_text_and_height(text_to_draw, self.fonts['body'], w - 20)
                     self._draw_text_in_box(wrapped_text, self.fonts['body'], (x, y, w, h), (0, 0, 0), stroke_color=(255, 255, 255))
                 else:
@@ -357,22 +441,9 @@ class InfoGraphicRenderer:
 
         placed_boxes = []
         for group in groups:
-            date, location = group['key']
             header_line = f"Group {group['letter']}"
-            info_line = ", ".join(p for p in [
-                date if date not in ["Unknown Date", "N/A"] else None,
-                location if location != "Unknown Location" else None,
-            ] if p)
-            num_members = len(group['members'])
-            if num_members > 1:
-                filenames = [f"{i+1}. {os.path.basename(photos[m]['metadata']['filename'])}" for i, m in enumerate(group['members'])]
-            else:
-                filenames = [os.path.basename(photos[group['members'][0]]['metadata']['filename'])]
-            text_parts = [header_line]
-            if info_line:
-                text_parts.append(info_line)
-            text_parts.extend(filenames)
-            wrapped_text, box_h = self._get_wrapped_text_and_height('\n'.join(text_parts), self.fonts['header'], callout_max_width)
+            body_lines = self._build_group_text_lines(group)
+            wrapped_text, box_h = self._get_wrapped_text_and_height('\n'.join([header_line] + body_lines), self.fonts['header'], callout_max_width)
             box_h += 20
             placed_boxes.append({'y': group['anchor_y'] - box_h / 2, 'h': box_h, 'group': group, 'text': wrapped_text})
 

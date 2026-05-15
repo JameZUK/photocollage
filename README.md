@@ -20,7 +20,7 @@ Both endpoints share a single "current generation" of photos so the legend alway
 ### The two endpoints
 
 * **`GET /collage.png`** — the main collage. Full-colour RGB PNG. Sized to `display.width × display.height`. Intended for the 7-colour display; do not pre-quantize, the InkyPi driver handles dithering against the device palette.
-* **`GET /info.png`** — the legend image. Pre-quantized to the Inky wHAT's 4-colour palette (white background, with red / yellow / black markers) so text and borders render crisply without dithering. Sized to `info_display.width × info_display.height`.
+* **`GET /info.png`** — the legend image. Pre-quantized to the Inky wHAT's 4-colour palette (white background, with red / yellow / black markers) so text and borders render crisply without dithering. Sized to `info_display.width × info_display.height`. Per-group text is configurable via `info_display.group_text.lines` — choose from `date`, `date_relative`, `location`, `city`, `country`, `people`, `description`, `filenames`, `filenames_plain`.
 * **`GET /`** — a plain HTML status page listing each group, its marker colour(s), date, and location. Useful for verifying what's being shown without staring at the e-ink panels.
 
 Both image endpoints share one cached "current generation" for `generation.ttl_seconds` (default 30s). The first request after the TTL expires regenerates; subsequent requests within the window serve the cached image. This means you can point two independent InkyPi playlists at the two endpoints and they will stay in sync without coordinating with each other — whichever one fires first triggers the generation.
@@ -78,6 +78,10 @@ info_display:                     # the small Inky wHAT
     header:       { path: "/usr/share/fonts/...", size: 11 }
     body:         { path: "/usr/share/fonts/...", size: 11 }
     group_letter: { path: "/usr/share/fonts/...", size: 14 }
+  group_text:                     # per-group text on the legend; one field = one line
+    lines: [date, location, filenames]
+    people_max: 3                 # cap on names shown in 'people' field
+    use_first_names_only: true
 
 immich:
   base_url: "http://immich:2283"

@@ -44,8 +44,8 @@ class ImmichClient:
             raise ImmichError(f"{method} {path} -> {r.status_code}: {r.text[:200]}")
         return r
 
-    def search_random(self, size: int, with_exif: bool = True) -> list[dict]:
-        body = {"size": size, "withExif": with_exif, "type": "IMAGE"}
+    def search_random(self, size: int, with_exif: bool = True, with_people: bool = True) -> list[dict]:
+        body = {"size": size, "withExif": with_exif, "withPeople": with_people, "type": "IMAGE"}
         return self._request("POST", "/search/random", json=body).json()
 
     def get_memories(self, for_date: Optional[date] = None) -> list[dict]:
