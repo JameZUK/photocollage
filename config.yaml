@@ -47,7 +47,7 @@ photos:
   padding: 5
   randomize_order: true
   max_image_size: 800
-  max_images_per_collage: 5
+  max_images_per_collage: 6
 
 generation:
   # Both /collage.png and /info.png share one cached generation for this many seconds,
